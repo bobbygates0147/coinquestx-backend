@@ -7,6 +7,8 @@ const buyBotSchema = new mongoose.Schema(
     asset: { type: String, default: "" },
     budget: { type: Number, required: true },
     generatedProfit: { type: Number, default: 0 },
+    settledProfit: { type: Number, default: 0 },
+    lastProfitSettledAt: { type: Date, default: null },
     status: {
       type: String,
       enum: ["Active", "Paused", "Completed"],

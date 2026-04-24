@@ -12,6 +12,14 @@ const placeTradeSchema = new mongoose.Schema(
     takeProfit: { type: String, default: "" },
     stopLoss: { type: String, default: "" },
     entryPrice: { type: String, default: "" },
+    buyBot: { type: mongoose.Schema.Types.ObjectId, ref: "BuyBot", default: null },
+    buyBotName: { type: String, default: "" },
+    executionMode: {
+      type: String,
+      enum: ["Manual", "Bot Assisted"],
+      default: "Manual",
+    },
+    botSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
     durationMs: { type: Number },
     startTime: { type: Number },
     status: {

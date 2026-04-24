@@ -2,6 +2,7 @@ import app from "./app.js";
 import { connectDb } from "./config/db.js";
 import { env } from "./config/env.js";
 import { getBrevoDiagnostics } from "./utils/brevoMailer.js";
+import { startPassiveIncomeWorker } from "./workers/passiveIncomeWorker.js";
 
 const maskEmail = (value = "") => {
   const normalized = `${value || ""}`.trim();
@@ -21,6 +22,7 @@ const maskEmail = (value = "") => {
 const start = async () => {
   try {
     await connectDb();
+    const passiveIncomeWorker = startPassiveIncomeWorker();
     app.listen(env.PORT, () => {
       console.log(`API listening on port ${env.PORT}`);
       const brevo = getBrevoDiagnostics();
@@ -38,6 +40,14 @@ const start = async () => {
         );
       }
     });
+
+    const shutdown = () => {
+      passiveIncomeWorker?.stop?.();
+      process.exit(0);
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);

@@ -1,61 +1,20 @@
+import BuyBot from "../models/BuyBot.js";
 import PlaceTrade from "../models/PlaceTrade.js";
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendUserNotificationEmail } from "../utils/notificationService.js";
+import {
+  getPlaceTradeDurationInMs,
+  normalizeTradeResultInput,
+  resolvePlaceTradeSettlement,
+} from "../utils/placeTradeSettlement.js";
+import {
+  hasAiBotAccess,
+  syncUserPlanAndFeatureAccess,
+} from "../utils/subscriptionAccess.js";
 
 const roundCurrency = (value) => Math.round((Number(value) || 0) * 100) / 100;
-
-const normalizeResultInput = (value) => {
-  const normalized = `${value || ""}`.trim().toLowerCase();
-  if (normalized === "win" || normalized === "won") return "Win";
-  if (normalized === "loss" || normalized === "lost") return "Loss";
-  return null;
-};
-
-const buildSettlementSeed = (trade) =>
-  `${trade?._id || ""}:${trade?.asset || ""}:${trade?.startTime || 0}:${trade?.amount || 0}:${trade?.direction || ""}`;
-
-const hashSeed = (seed) =>
-  [...`${seed || ""}`].reduce(
-    (hash, character) => (hash * 31 + character.charCodeAt(0)) % 1000003,
-    17
-  );
-
-const resolveSettlement = (trade, payload = {}) => {
-  const explicitResult = normalizeResultInput(payload.result);
-  const storedResult = normalizeResultInput(trade?.result);
-  const amount = roundCurrency(trade?.amount);
-  const seedValue = hashSeed(buildSettlementSeed(trade));
-  const outcome =
-    explicitResult || storedResult || (seedValue % 100 < 56 ? "Win" : "Loss");
-
-  let profitLoss = Number(payload.profitLoss);
-  if (!Number.isFinite(profitLoss)) {
-    const swing = 0.06 + (seedValue % 7) * 0.01;
-    profitLoss = roundCurrency(amount * swing);
-    if (outcome === "Loss") {
-      profitLoss = -profitLoss;
-    }
-  }
-
-  if (outcome === "Win" && profitLoss < 0) {
-    profitLoss = Math.abs(profitLoss);
-  }
-  if (outcome === "Loss" && profitLoss > 0) {
-    profitLoss = -profitLoss;
-  }
-
-  const settlementAmount = trade?.stakeReserved
-    ? Math.max(0, roundCurrency(amount + profitLoss))
-    : roundCurrency(profitLoss);
-
-  return {
-    outcome,
-    profitLoss: roundCurrency(profitLoss),
-    settlementAmount: roundCurrency(settlementAmount),
-  };
-};
 
 const buildTradeOpenTransaction = ({ user, trade, currentBalance, nextBalance }) =>
   Transaction.create({
@@ -83,6 +42,9 @@ const buildTradeOpenTransaction = ({ user, trade, currentBalance, nextBalance })
       entryDirection: "debit",
       phase: "opened",
       reservedStake: true,
+      executionMode: trade.executionMode || "Manual",
+      buyBotId: trade.buyBot ? trade.buyBot.toString() : "",
+      buyBotName: trade.buyBotName || "",
     },
   });
 
@@ -122,6 +84,9 @@ const buildTradeSettlementTransaction = ({
       phase: "settled",
       reservedStake: !!trade.stakeReserved,
       result: trade.result,
+      executionMode: trade.executionMode || "Manual",
+      buyBotId: trade.buyBot ? trade.buyBot.toString() : "",
+      buyBotName: trade.buyBotName || "",
     },
   });
 
@@ -134,6 +99,9 @@ const buildSettlementResponse = (trade, balance) => ({
   settlementAmount: trade.stakeReserved
     ? roundCurrency(trade.amount + trade.profitLoss)
     : roundCurrency(trade.profitLoss),
+  executionMode: trade.executionMode || "Manual",
+  buyBotId: trade.buyBot ? trade.buyBot.toString() : "",
+  buyBotName: trade.buyBotName || "",
 });
 
 export const placeTradeController = {
@@ -155,6 +123,32 @@ export const placeTradeController = {
       });
     }
 
+    const requestedBuyBotId = `${req.body.buyBotId || ""}`.trim();
+    let activeBuyBot = null;
+
+    if (requestedBuyBotId) {
+      const currentPlan = await syncUserPlanAndFeatureAccess(user);
+      if (!hasAiBotAccess(currentPlan)) {
+        return res.status(403).json({
+          success: false,
+          message: `Bot-assisted trading requires a Premium, Platinum, or Elite plan. Your current plan is ${currentPlan}.`,
+        });
+      }
+
+      activeBuyBot = await BuyBot.findOne({
+        _id: requestedBuyBotId,
+        user: user._id,
+        status: "Active",
+      });
+
+      if (!activeBuyBot) {
+        return res.status(400).json({
+          success: false,
+          message: "Selected buy bot is not active or not available for this account",
+        });
+      }
+    }
+
     const payload = {
       ...req.body,
       user: user._id,
@@ -164,6 +158,20 @@ export const placeTradeController = {
       profitLoss: 0,
       stakeReserved: true,
       settledAt: null,
+      buyBot: activeBuyBot?._id || null,
+      buyBotName: activeBuyBot?.strategyName || "",
+      executionMode: activeBuyBot ? "Bot Assisted" : "Manual",
+      botSnapshot: activeBuyBot
+        ? {
+            strategyName: activeBuyBot.strategyName || "",
+            level: Number(activeBuyBot?.settings?.level || 0),
+            winRate: Number(activeBuyBot?.settings?.winRate || 0),
+            monthlyRoi: Number(activeBuyBot?.settings?.monthlyRoi || 0),
+            budget: Number(activeBuyBot?.budget || 0),
+          }
+        : {},
+      durationMs:
+        Number(req.body.durationMs) || getPlaceTradeDurationInMs(req.body.duration),
     };
 
     const nextBalance = roundCurrency(currentBalance - amount);
@@ -279,7 +287,7 @@ export const placeTradeController = {
       });
     }
 
-    const existingResult = normalizeResultInput(existingTrade.result);
+    const existingResult = normalizeTradeResultInput(existingTrade.result);
     if (existingTrade.status === "Completed" && existingResult) {
       return res.json({
         success: true,
@@ -294,7 +302,7 @@ export const placeTradeController = {
       });
     }
 
-    const { outcome, profitLoss, settlementAmount } = resolveSettlement(
+    const { outcome, profitLoss, settlementAmount } = resolvePlaceTradeSettlement(
       existingTrade,
       req.body
     );
@@ -313,6 +321,7 @@ export const placeTradeController = {
             result: outcome,
             profitLoss,
             settledAt,
+            executionMode: existingTrade.executionMode || "Manual",
           },
         },
         { new: true }
@@ -382,6 +391,9 @@ export const placeTradeController = {
             result: trade.result,
             profitLoss: trade.profitLoss,
             settlementAmount,
+            executionMode: trade.executionMode || "Manual",
+            buyBotId: trade.buyBot ? trade.buyBot.toString() : "",
+            buyBotName: trade.buyBotName || "",
           },
         });
       } catch (notificationError) {

@@ -17,6 +17,14 @@ export const env = {
   PORT: process.env.PORT ? Number(process.env.PORT) : 5000,
   MONGODB_URI:
     process.env.MONGODB_URI || "mongodb://localhost:27017/coinquestx",
+  PASSIVE_INCOME_WORKER_ENABLED:
+    process.env.PASSIVE_INCOME_WORKER_ENABLED !== "false",
+  PASSIVE_INCOME_WORKER_INTERVAL_MS: process.env.PASSIVE_INCOME_WORKER_INTERVAL_MS
+    ? Number(process.env.PASSIVE_INCOME_WORKER_INTERVAL_MS)
+    : 60 * 1000,
+  PASSIVE_INCOME_WORKER_LEASE_MS: process.env.PASSIVE_INCOME_WORKER_LEASE_MS
+    ? Number(process.env.PASSIVE_INCOME_WORKER_LEASE_MS)
+    : 10 * 60 * 1000,
   JWT_SECRET: process.env.JWT_SECRET || "change_me",
   CORS_ORIGINS: parsedCorsOrigins,
   CORS_ORIGIN: parsedCorsOrigins[0] || "http://localhost:5173",

@@ -4,16 +4,16 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { applyBalanceChange, roundCurrency } from "../utils/walletLedger.js";
 import { sendUserNotificationEmail } from "../utils/notificationService.js";
 
-const NETWORK_BOOST_PER_ACTIVE_MINER = 0.08;
-const FLEET_BOOST_PER_PURCHASED_BOT = 0.12;
-const SELECTED_BOT_LEVEL_BOOST_DIVISOR = 65;
+const NETWORK_BOOST_PER_ACTIVE_MINER = 0.02;
+const FLEET_BOOST_PER_PURCHASED_BOT = 0.04;
+const SELECTED_BOT_LEVEL_BOOST_DIVISOR = 140;
 
 const COIN_CONFIG = {
-  BTC: { price: 30000, rate: 0.00000002 },
-  ETH: { price: 2000, rate: 0.0000005 },
-  LTC: { price: 90, rate: 0.000005 },
-  DOGE: { price: 0.12, rate: 0.0001 },
-  SOL: { price: 160, rate: 0.000001 },
+  BTC: { price: 30000, rate: 0.00000000000002 },
+  ETH: { price: 2000, rate: 0.0000000000005 },
+  LTC: { price: 90, rate: 0.000000000005 },
+  DOGE: { price: 0.12, rate: 0.0000000001 },
+  SOL: { price: 160, rate: 0.000000000001 },
 };
 
 const formatUsd = (value) => `$${Number(value || 0).toFixed(2)}`;

@@ -1,4 +1,5 @@
 import BuyBot from "../models/BuyBot.js";
+import Mining from "../models/Mining.js";
 import Subscription from "../models/Subscription.js";
 import { sendUserNotificationEmail } from "./notificationService.js";
 
@@ -11,6 +12,7 @@ export const PLAN_MAP = {
 };
 
 export const AI_BOT_REQUIRED_PLANS = ["Premium", "Platinum", "Elite"];
+export const MINING_REQUIRED_PLANS = ["Premium", "Platinum", "Elite"];
 export const DIRECT_MESSAGE_REQUIRED_PLANS = ["Platinum", "Elite"];
 
 const formatRequiredPlans = (plans = []) => {
@@ -32,6 +34,9 @@ export const normalizePlanName = (value, fallback = "Basic") => {
 
 export const hasAiBotAccess = (planName) =>
   AI_BOT_REQUIRED_PLANS.includes(normalizePlanName(planName));
+
+export const hasMiningAccess = (planName) =>
+  MINING_REQUIRED_PLANS.includes(normalizePlanName(planName));
 
 export const hasDirectMessageAccess = (planName) =>
   DIRECT_MESSAGE_REQUIRED_PLANS.includes(normalizePlanName(planName));
@@ -93,6 +98,19 @@ export const pauseActiveBotsForUser = async (userId) => {
   );
 };
 
+export const pauseActiveMinersForUser = async (userId) => {
+  await Mining.updateMany(
+    {
+      user: userId,
+      status: "Active",
+    },
+    {
+      status: "Paused",
+      updatedAt: new Date(),
+    }
+  );
+};
+
 export const syncUserPlanAndFeatureAccess = async (user) => {
   const currentPlan = await resolveCurrentPlan(user._id);
 
@@ -105,6 +123,10 @@ export const syncUserPlanAndFeatureAccess = async (user) => {
     await pauseActiveBotsForUser(user._id);
   }
 
+  if (!hasMiningAccess(currentPlan)) {
+    await pauseActiveMinersForUser(user._id);
+  }
+
   return currentPlan;
 };
 
@@ -112,6 +134,13 @@ export const getAiBotAccessDeniedMessage = (planName) => {
   const currentPlan = normalizePlanName(planName);
   return `AI trading bots require ${formatRequiredPlans(
     AI_BOT_REQUIRED_PLANS
+  )} plans. Your current plan is ${currentPlan}.`;
+};
+
+export const getMiningAccessDeniedMessage = (planName) => {
+  const currentPlan = normalizePlanName(planName);
+  return `Mining requires ${formatRequiredPlans(
+    MINING_REQUIRED_PLANS
   )} plans. Your current plan is ${currentPlan}.`;
 };
 
